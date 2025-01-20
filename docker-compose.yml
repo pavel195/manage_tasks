@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    command: >
+      sh -c "python -m debugpy --listen 0.0.0.0:8001 manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_NAME=task_manager
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DEBUGPY_HOST=0.0.0.0
+      - DEBUGPY_PORT=8001
+      - DEBUG=True
+      
+
+  postgres:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=task_manager
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  celery-processor:
+    build: .
+    command: sh -c "python -m debugpy --listen 0.0.0.0:8002 -m celery -A config worker --loglevel=info --queues=processor"
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DB_NAME=task_manager
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DEBUGPY_HOST=0.0.0.0
+      - DEBUGPY_PORT=8002
+      - DEBUG=True   
+
+volumes:
+  postgres_data: 
